@@ -1,0 +1,8 @@
+uvicorn==0.32.0
+fastapi==0.115.2
+pydantic==2.10.6
+pytz==2024.1
+
+# LangChain y LangGraph
+langchain==0.3.25
+langgraph==0.6.0
