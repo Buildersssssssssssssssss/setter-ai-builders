@@ -17,10 +17,7 @@ load_dotenv()
 
 VERIFY_TOKEN = os.environ.get("INSTAGRAM_VERIFY_TOKEN", "")
 IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "")
-# ID de la cuenta de Instagram de achievers (la que recibe y responde mensajes)
-IG_ACCOUNT_ID = os.environ.get("IG_ACCOUNT_ID", "")
-GRAPH_BASE = "https://graph.instagram.com/v25.0"
-GRAPH_URL = f"{GRAPH_BASE}/me/messages"
+GRAPH_URL = "https://graph.instagram.com/v25.0/me/messages"
 
 app = FastAPI()
 puerto = os.environ.get("PORT", 8080)
@@ -75,60 +72,14 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
     tasks_scheduled = 0
 
     for entry in body.get("entry", []):
-        entry_id = entry.get("id", "")
-
-        # Solo procesar eventos de la cuenta receptora (achievers).
-        # Meta envía el evento duplicado: una vez para el sender y otra para el recipient.
-        # Si IG_ACCOUNT_ID está definido, ignoramos entradas que no sean de esa cuenta.
-        if IG_ACCOUNT_ID and entry_id != IG_ACCOUNT_ID:
-            print(f"[WEBHOOK] entry_id={entry_id!r} ignorado (no es IG_ACCOUNT_ID={IG_ACCOUNT_ID!r})")
-            continue
-
-        # DMs: formato messaging[]
-        for event in entry.get("messaging", []):
-            msg = event.get("message", {})
-            message_edit = event.get("message_edit", {})
-
-            # Mensaje nuevo directo (formato clásico con clave message)
-            if msg and not msg.get("is_echo"):
-                sender_id = event.get("sender", {}).get("id")
-                text = msg.get("text", "")
-                print(f"[WEBHOOK] DM directo → sender_id={sender_id!r} text={text!r}")
-                if sender_id and text:
-                    background_tasks.add_task(
-                        process_and_reply,
-                        recipient_id=sender_id,
-                        text=text,
-                        trigger_type="dm",
-                    )
-                    tasks_scheduled += 1
-
-            # Meta envía el envío inicial como message_edit con num_edit=0.
-            # En este formato no viene sender ni texto; fetcheamos el mensaje por mid.
-            elif message_edit and message_edit.get("num_edit", -1) == 0:
-                mid = message_edit.get("mid")
-                print(f"[WEBHOOK] message_edit num_edit=0 → mid={mid!r} (fetch requerido)")
-                if mid:
-                    background_tasks.add_task(process_message_edit, mid=mid)
-                    tasks_scheduled += 1
-
-            else:
-                print(f"[WEBHOOK] messaging event ignorado: {json.dumps(event)}")
-
-        # Comentarios y otros campos: entry[].changes[]
         for change in entry.get("changes", []):
             field = change.get("field")
             value = change.get("value", {})
-            print(f"[WEBHOOK] change field={field!r} value={json.dumps(value)}")
 
             if field == "messages":
-                msg = value.get("message", {})
-                if msg.get("is_echo"):
-                    print(f"[WEBHOOK] messages is_echo, ignorado")
-                    continue
                 sender_id = value.get("sender", {}).get("id")
-                text = msg.get("text", "")
-                print(f"[WEBHOOK] messages → sender_id={sender_id!r} text={text!r}")
+                text = value.get("message", {}).get("text", "")
+                print(f"[WEBHOOK] DM → sender_id={sender_id!r} text={text!r}")
                 if sender_id and text:
                     background_tasks.add_task(
                         process_and_reply,
@@ -136,84 +87,30 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                         text=text,
                         trigger_type="dm",
                     )
-                    tasks_scheduled += 1
-
-            elif field == "message_edit":
-                # Formato changes[] con texto y sender incluidos
-                edit_data = value.get("message_edit", {})
-                num_edit = edit_data.get("num_edit", -1)
-                # Solo procesar el mensaje original (num_edit=0), ignorar ediciones posteriores
-                if num_edit != 0:
-                    print(f"[WEBHOOK] message_edit num_edit={num_edit}, ignorado")
-                    continue
-                sender_id = value.get("sender", {}).get("id")
-                recipient_id_check = value.get("recipient", {}).get("id")
-                text = edit_data.get("text", "")
-                mid = edit_data.get("mid")
-                print(f"[WEBHOOK] message_edit (changes) → sender={sender_id!r} recipient={recipient_id_check!r} text={text!r}")
-                if sender_id and text:
-                    background_tasks.add_task(
-                        process_and_reply,
-                        recipient_id=sender_id,
-                        text=text,
-                        trigger_type="dm",
-                    )
-                    tasks_scheduled += 1
-                elif mid and not text:
-                    # Por si el texto no viene en changes[], fetcheamos
-                    background_tasks.add_task(process_message_edit, mid=mid)
                     tasks_scheduled += 1
 
             elif field == "comments":
-                recipient_id = value.get("from", {}).get("id")
+                sender_id = value.get("from", {}).get("id")
                 text = value.get("text", "")
                 post_id = value.get("media", {}).get("id")
-                print(f"[WEBHOOK] Comentario → recipient_id={recipient_id!r} text={text!r}")
-                if recipient_id and text:
+                comment_id = value.get("id")
+                print(f"[WEBHOOK] Comentario → sender_id={sender_id!r} text={text!r}")
+                if sender_id and text:
                     background_tasks.add_task(
                         process_and_reply,
-                        recipient_id=recipient_id,
+                        recipient_id=sender_id,
                         text=text,
                         trigger_type="comment",
                         post_id=post_id,
+                        comment_id=comment_id,
                     )
                     tasks_scheduled += 1
 
+            else:
+                print(f"[WEBHOOK] campo ignorado: {field!r}")
+
     print(f"[WEBHOOK] tasks_scheduled={tasks_scheduled}")
     return {"status": "ok"}
-
-
-# ── Fetch mensaje por mid (para eventos message_edit num_edit=0) ──────────────
-
-async def process_message_edit(mid: str, sender_id: str | None = None):
-    print(f"[FETCH] Buscando mensaje mid={mid!r}")
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.get(
-            f"{GRAPH_BASE}/{mid}",
-            params={
-                "fields": "id,message,from,created_time",
-                "access_token": IG_ACCESS_TOKEN,
-            },
-        )
-        data = response.json()
-        print(f"[FETCH] response status={response.status_code} data={data}")
-
-    if "error" in data:
-        print(f"[FETCH] Error al buscar mensaje: {data['error']}")
-        return
-
-    text = data.get("message", "")
-    from_id = data.get("from", {}).get("id", sender_id)
-
-    # Si el mensaje viene de la propia cuenta (eco), ignorar
-    if IG_ACCOUNT_ID and from_id == IG_ACCOUNT_ID:
-        print(f"[FETCH] Mensaje propio ignorado (from_id={from_id!r})")
-        return
-
-    if text:
-        await process_and_reply(recipient_id=from_id, text=text, trigger_type="dm")
-    else:
-        print(f"[FETCH] Sin texto en el mensaje mid={mid!r}")
 
 
 # ── Lógica principal: agente + envío ─────────────────────────────────────────
@@ -223,6 +120,7 @@ async def process_and_reply(
     text: str,
     trigger_type: str,
     post_id: str | None = None,
+    comment_id: str | None = None,
 ):
     from nodes.orchestration import call_setter_ai
 
