@@ -92,13 +92,31 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 )
                 tasks_scheduled += 1
 
-        # Comentarios: entry[].changes[]
+        # Eventos: entry[].changes[]
         for change in entry.get("changes", []):
             field = change.get("field")
             value = change.get("value", {})
             print(f"[WEBHOOK] change field={field!r} value={json.dumps(value)}")
 
-            if field == "comments":
+            if field == "messages":
+                msg = value.get("message", {})
+                # Ignorar ecos (mensajes que la propia cuenta envía)
+                if msg.get("is_echo"):
+                    print(f"[WEBHOOK] messages is_echo, ignorado")
+                    continue
+                sender_id = value.get("sender", {}).get("id")
+                text = msg.get("text", "")
+                print(f"[WEBHOOK] messages → sender_id={sender_id!r} text={text!r}")
+                if sender_id and text:
+                    background_tasks.add_task(
+                        process_and_reply,
+                        recipient_id=sender_id,
+                        text=text,
+                        trigger_type="dm",
+                    )
+                    tasks_scheduled += 1
+
+            elif field == "comments":
                 recipient_id = value.get("from", {}).get("id")
                 text = value.get("text", "")
                 post_id = value.get("media", {}).get("id")
