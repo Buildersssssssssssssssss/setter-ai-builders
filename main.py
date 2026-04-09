@@ -84,12 +84,12 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
             print(f"[WEBHOOK] entry_id={entry_id!r} ignorado (no es IG_ACCOUNT_ID={IG_ACCOUNT_ID!r})")
             continue
 
-        # DMs: formato messaging[] con clave message
+        # DMs: formato messaging[]
         for event in entry.get("messaging", []):
             msg = event.get("message", {})
             message_edit = event.get("message_edit", {})
 
-            # Mensaje nuevo directo
+            # Mensaje nuevo directo (formato clásico con clave message)
             if msg and not msg.get("is_echo"):
                 sender_id = event.get("sender", {}).get("id")
                 text = msg.get("text", "")
@@ -104,17 +104,12 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                     tasks_scheduled += 1
 
             # Meta envía el envío inicial como message_edit con num_edit=0.
-            # Necesitamos buscar el contenido con el mid.
+            # En este formato no viene sender ni texto; fetcheamos el mensaje por mid.
             elif message_edit and message_edit.get("num_edit", -1) == 0:
                 mid = message_edit.get("mid")
-                sender_id = event.get("sender", {}).get("id")
-                print(f"[WEBHOOK] message_edit num_edit=0 → mid={mid!r} sender_id={sender_id!r}")
-                if mid and sender_id:
-                    background_tasks.add_task(
-                        process_message_edit,
-                        mid=mid,
-                        sender_id=sender_id,
-                    )
+                print(f"[WEBHOOK] message_edit num_edit=0 → mid={mid!r} (fetch requerido)")
+                if mid:
+                    background_tasks.add_task(process_message_edit, mid=mid)
                     tasks_scheduled += 1
 
             else:
@@ -143,6 +138,32 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                     )
                     tasks_scheduled += 1
 
+            elif field == "message_edit":
+                # Formato changes[] con texto y sender incluidos
+                edit_data = value.get("message_edit", {})
+                num_edit = edit_data.get("num_edit", -1)
+                # Solo procesar el mensaje original (num_edit=0), ignorar ediciones posteriores
+                if num_edit != 0:
+                    print(f"[WEBHOOK] message_edit num_edit={num_edit}, ignorado")
+                    continue
+                sender_id = value.get("sender", {}).get("id")
+                recipient_id_check = value.get("recipient", {}).get("id")
+                text = edit_data.get("text", "")
+                mid = edit_data.get("mid")
+                print(f"[WEBHOOK] message_edit (changes) → sender={sender_id!r} recipient={recipient_id_check!r} text={text!r}")
+                if sender_id and text:
+                    background_tasks.add_task(
+                        process_and_reply,
+                        recipient_id=sender_id,
+                        text=text,
+                        trigger_type="dm",
+                    )
+                    tasks_scheduled += 1
+                elif mid and not text:
+                    # Por si el texto no viene en changes[], fetcheamos
+                    background_tasks.add_task(process_message_edit, mid=mid)
+                    tasks_scheduled += 1
+
             elif field == "comments":
                 recipient_id = value.get("from", {}).get("id")
                 text = value.get("text", "")
@@ -164,7 +185,7 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
 
 # ── Fetch mensaje por mid (para eventos message_edit num_edit=0) ──────────────
 
-async def process_message_edit(mid: str, sender_id: str):
+async def process_message_edit(mid: str, sender_id: str | None = None):
     print(f"[FETCH] Buscando mensaje mid={mid!r}")
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.get(
