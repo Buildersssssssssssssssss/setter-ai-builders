@@ -17,7 +17,10 @@ load_dotenv()
 
 VERIFY_TOKEN = os.environ.get("INSTAGRAM_VERIFY_TOKEN", "")
 IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "")
-GRAPH_URL = "https://graph.instagram.com/v25.0/me/messages"
+# ID de la cuenta de Instagram de achievers (la que recibe y responde mensajes)
+IG_ACCOUNT_ID = os.environ.get("IG_ACCOUNT_ID", "")
+GRAPH_BASE = "https://graph.instagram.com/v25.0"
+GRAPH_URL = f"{GRAPH_BASE}/me/messages"
 
 app = FastAPI()
 puerto = os.environ.get("PORT", 8080)
@@ -67,32 +70,57 @@ async def verify_webhook(
 @app.post("/webhook/instagram")
 async def instagram_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
-
-    # [DEBUG] Payload completo que llega de Meta
     print(f"[WEBHOOK] body: {json.dumps(body)}")
 
     tasks_scheduled = 0
 
     for entry in body.get("entry", []):
-        # DMs: Instagram usa entry[].messaging[]
+        entry_id = entry.get("id", "")
+
+        # Solo procesar eventos de la cuenta receptora (achievers).
+        # Meta envía el evento duplicado: una vez para el sender y otra para el recipient.
+        # Si IG_ACCOUNT_ID está definido, ignoramos entradas que no sean de esa cuenta.
+        if IG_ACCOUNT_ID and entry_id != IG_ACCOUNT_ID:
+            print(f"[WEBHOOK] entry_id={entry_id!r} ignorado (no es IG_ACCOUNT_ID={IG_ACCOUNT_ID!r})")
+            continue
+
+        # DMs: formato messaging[] con clave message
         for event in entry.get("messaging", []):
             msg = event.get("message", {})
-            if not msg or msg.get("is_echo"):
-                print(f"[WEBHOOK] DM ignorado (sin msg o is_echo). event={json.dumps(event)}")
-                continue
-            sender_id = event.get("sender", {}).get("id")
-            text = msg.get("text", "")
-            print(f"[WEBHOOK] DM → sender_id={sender_id!r} text={text!r}")
-            if sender_id and text:
-                background_tasks.add_task(
-                    process_and_reply,
-                    recipient_id=sender_id,
-                    text=text,
-                    trigger_type="dm",
-                )
-                tasks_scheduled += 1
+            message_edit = event.get("message_edit", {})
 
-        # Eventos: entry[].changes[]
+            # Mensaje nuevo directo
+            if msg and not msg.get("is_echo"):
+                sender_id = event.get("sender", {}).get("id")
+                text = msg.get("text", "")
+                print(f"[WEBHOOK] DM directo → sender_id={sender_id!r} text={text!r}")
+                if sender_id and text:
+                    background_tasks.add_task(
+                        process_and_reply,
+                        recipient_id=sender_id,
+                        text=text,
+                        trigger_type="dm",
+                    )
+                    tasks_scheduled += 1
+
+            # Meta envía el envío inicial como message_edit con num_edit=0.
+            # Necesitamos buscar el contenido con el mid.
+            elif message_edit and message_edit.get("num_edit", -1) == 0:
+                mid = message_edit.get("mid")
+                sender_id = event.get("sender", {}).get("id")
+                print(f"[WEBHOOK] message_edit num_edit=0 → mid={mid!r} sender_id={sender_id!r}")
+                if mid and sender_id:
+                    background_tasks.add_task(
+                        process_message_edit,
+                        mid=mid,
+                        sender_id=sender_id,
+                    )
+                    tasks_scheduled += 1
+
+            else:
+                print(f"[WEBHOOK] messaging event ignorado: {json.dumps(event)}")
+
+        # Comentarios y otros campos: entry[].changes[]
         for change in entry.get("changes", []):
             field = change.get("field")
             value = change.get("value", {})
@@ -100,7 +128,6 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
 
             if field == "messages":
                 msg = value.get("message", {})
-                # Ignorar ecos (mensajes que la propia cuenta envía)
                 if msg.get("is_echo"):
                     print(f"[WEBHOOK] messages is_echo, ignorado")
                     continue
@@ -135,6 +162,39 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
     return {"status": "ok"}
 
 
+# ── Fetch mensaje por mid (para eventos message_edit num_edit=0) ──────────────
+
+async def process_message_edit(mid: str, sender_id: str):
+    print(f"[FETCH] Buscando mensaje mid={mid!r}")
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.get(
+            f"{GRAPH_BASE}/{mid}",
+            params={
+                "fields": "id,message,from,created_time",
+                "access_token": IG_ACCESS_TOKEN,
+            },
+        )
+        data = response.json()
+        print(f"[FETCH] response status={response.status_code} data={data}")
+
+    if "error" in data:
+        print(f"[FETCH] Error al buscar mensaje: {data['error']}")
+        return
+
+    text = data.get("message", "")
+    from_id = data.get("from", {}).get("id", sender_id)
+
+    # Si el mensaje viene de la propia cuenta (eco), ignorar
+    if IG_ACCOUNT_ID and from_id == IG_ACCOUNT_ID:
+        print(f"[FETCH] Mensaje propio ignorado (from_id={from_id!r})")
+        return
+
+    if text:
+        await process_and_reply(recipient_id=from_id, text=text, trigger_type="dm")
+    else:
+        print(f"[FETCH] Sin texto en el mensaje mid={mid!r}")
+
+
 # ── Lógica principal: agente + envío ─────────────────────────────────────────
 
 async def process_and_reply(
@@ -145,7 +205,7 @@ async def process_and_reply(
 ):
     from nodes.orchestration import call_setter_ai
 
-    print(f"[REPLY] Iniciando process_and_reply → trigger={trigger_type} recipient={recipient_id!r}")
+    print(f"[REPLY] trigger={trigger_type} recipient={recipient_id!r} text={text!r}")
     await asyncio.sleep(random.uniform(3, 9))
 
     result = call_setter_ai({
