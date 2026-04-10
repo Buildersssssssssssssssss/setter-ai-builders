@@ -72,6 +72,8 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
     tasks_scheduled = 0
 
     for entry in body.get("entry", []):
+
+        # ── Formato changes (webhooks de prueba del panel) ────────────────
         for change in entry.get("changes", []):
             field = change.get("field")
             value = change.get("value", {})
@@ -79,7 +81,7 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
             if field == "messages":
                 sender_id = value.get("sender", {}).get("id")
                 text = value.get("message", {}).get("text", "")
-                print(f"[WEBHOOK] DM → sender_id={sender_id!r} text={text!r}")
+                print(f"[WEBHOOK] DM (changes) → sender_id={sender_id!r} text={text!r}")
                 if sender_id and text:
                     background_tasks.add_task(
                         process_and_reply,
@@ -108,6 +110,36 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
 
             else:
                 print(f"[WEBHOOK] campo ignorado: {field!r}")
+
+        # ── Formato messaging (mensajes reales de Instagram) ──────────────
+        for event in entry.get("messaging", []):
+            msg = event.get("message", {})
+
+            if msg.get("is_echo"):
+                print(f"[WEBHOOK] Ignorando echo")
+                continue
+
+            if "message_edit" in event:
+                print(f"[WEBHOOK] Ignorando message_edit")
+                continue
+
+            text = msg.get("text", "")
+            if not text:
+                print(f"[WEBHOOK] Ignorando mensaje sin texto: {list(msg.keys())}")
+                continue
+
+            sender_id = event.get("sender", {}).get("id")
+            if not sender_id:
+                continue
+
+            print(f"[WEBHOOK] DM (messaging) → sender_id={sender_id!r} text={text!r}")
+            background_tasks.add_task(
+                process_and_reply,
+                recipient_id=sender_id,
+                text=text,
+                trigger_type="dm",
+            )
+            tasks_scheduled += 1
 
     print(f"[WEBHOOK] tasks_scheduled={tasks_scheduled}")
     return {"status": "ok"}
