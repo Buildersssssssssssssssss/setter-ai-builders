@@ -10,7 +10,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 load_dotenv()
@@ -160,6 +160,19 @@ async def send_dm(recipient_id: str, message_text: str):
         data = response.json()
         print(f"[GRAPH] response status={response.status_code} data={data}")
         return data
+
+# --Politica de privacidad y terminos y condiciones ────────────────────────────
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_policy():
+    return """
+    <html><body>
+    <h1>Política de Privacidad</h1>
+    <p>Esta aplicación procesa mensajes de Instagram únicamente para 
+    responder automáticamente a usuarios que contactan la cuenta 
+    @we_areachievers. No almacenamos datos personales de terceros.</p>
+    </body></html>
+    """
 
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
