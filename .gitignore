@@ -5,6 +5,7 @@
 
 # Python
 __pycache__/
+graph_example.py/
 *.py[cod]
 *$py.class
 .venv/
@@ -17,6 +18,9 @@ env_setter/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Archivos de referencia/ejemplo
+graph_example.py
 
 # IDE
 .idea/

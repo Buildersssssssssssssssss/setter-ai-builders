@@ -10,5 +10,6 @@ env_setter
 .idea
 .vscode
 *.md
+graph_example.py
 Dockerfile
 .dockerignore

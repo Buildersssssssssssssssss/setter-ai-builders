@@ -182,7 +182,9 @@ async def process_and_reply(
     result = call_setter_ai({
         "id_instagram": recipient_id,
         "id_publicacion": post_id,
+        "comment_id": comment_id,
         "customer_message": text,
+        "trigger_type": trigger_type,
     })
     print(f"[REPLY] call_setter_ai result={result}")
 
