@@ -19,6 +19,25 @@ VERIFY_TOKEN = os.environ.get("INSTAGRAM_VERIFY_TOKEN", "")
 IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "")
 GRAPH_URL = "https://graph.instagram.com/v25.0/me/messages"
 
+# Modo test: solo procesa mensajes de sender_ids en la whitelist
+# BOOL_TEST=true  →  activa el filtro
+# TEST_WHITELIST=id1,id2,id3  →  IDs permitidos (comma-separated)
+TEST_MODE = os.environ.get("BOOL_TEST", "false").strip().lower() in ("1", "true", "yes")
+TEST_WHITELIST: set[str] = {
+    sid.strip()
+    for sid in os.environ.get("TEST_WHITELIST", "").split(",")
+    if sid.strip()
+}
+
+
+def _sender_allowed(sender_id: str) -> bool:
+    if not TEST_MODE:
+        return True
+    allowed = sender_id in TEST_WHITELIST
+    if not allowed:
+        print(f"[TEST] sender_id={sender_id!r} no está en la whitelist, ignorado")
+    return allowed
+
 app = FastAPI()
 puerto = os.environ.get("PORT", 8080)
 
@@ -82,7 +101,7 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 sender_id = value.get("sender", {}).get("id")
                 text = value.get("message", {}).get("text", "")
                 print(f"[WEBHOOK] DM (changes) → sender_id={sender_id!r} text={text!r}")
-                if sender_id and text:
+                if sender_id and text and _sender_allowed(sender_id):
                     background_tasks.add_task(
                         process_and_reply,
                         recipient_id=sender_id,
@@ -97,7 +116,7 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 post_id = value.get("media", {}).get("id")
                 comment_id = value.get("id")
                 print(f"[WEBHOOK] Comentario → sender_id={sender_id!r} text={text!r}")
-                if sender_id and text:
+                if sender_id and text and _sender_allowed(sender_id):
                     background_tasks.add_task(
                         process_and_reply,
                         recipient_id=sender_id,
@@ -133,13 +152,14 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 continue
 
             print(f"[WEBHOOK] DM (messaging) → sender_id={sender_id!r} text={text!r}")
-            background_tasks.add_task(
-                process_and_reply,
-                recipient_id=sender_id,
-                text=text,
-                trigger_type="dm",
-            )
-            tasks_scheduled += 1
+            if _sender_allowed(sender_id):
+                background_tasks.add_task(
+                    process_and_reply,
+                    recipient_id=sender_id,
+                    text=text,
+                    trigger_type="dm",
+                )
+                tasks_scheduled += 1
 
     print(f"[WEBHOOK] tasks_scheduled={tasks_scheduled}")
     return {"status": "ok"}
