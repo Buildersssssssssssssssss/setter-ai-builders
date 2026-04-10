@@ -151,13 +151,26 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
             if not sender_id:
                 continue
 
-            print(f"[WEBHOOK] DM (messaging) → sender_id={sender_id!r} text={text!r}")
+            story = msg.get("reply_to", {}).get("story", {})
+            if story:
+                event_trigger_type = "story_reply"
+                story_id = story.get("id")
+                story_link = story.get("url")
+                print(f"[WEBHOOK] Story reply → sender_id={sender_id!r} story_id={story_id!r} text={text!r}")
+            else:
+                event_trigger_type = "dm"
+                story_id = None
+                story_link = None
+                print(f"[WEBHOOK] DM (messaging) → sender_id={sender_id!r} text={text!r}")
+
             if _sender_allowed(sender_id):
                 background_tasks.add_task(
                     process_and_reply,
                     recipient_id=sender_id,
                     text=text,
-                    trigger_type="dm",
+                    trigger_type=event_trigger_type,
+                    story_id=story_id,
+                    story_link=story_link,
                 )
                 tasks_scheduled += 1
 
@@ -173,6 +186,8 @@ async def process_and_reply(
     trigger_type: str,
     post_id: str | None = None,
     comment_id: str | None = None,
+    story_id: str | None = None,
+    story_link: str | None = None,
 ):
     from nodes.orchestration import call_setter_ai
 
@@ -183,6 +198,8 @@ async def process_and_reply(
         "id_instagram": recipient_id,
         "id_publicacion": post_id,
         "comment_id": comment_id,
+        "story_id": story_id,
+        "story_link": story_link,
         "customer_message": text,
         "trigger_type": trigger_type,
     })

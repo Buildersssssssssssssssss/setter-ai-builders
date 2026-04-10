@@ -11,5 +11,7 @@ env_setter
 .vscode
 *.md
 graph_example.py
+render_graph.py
+setter_graph.png
 Dockerfile
 .dockerignore

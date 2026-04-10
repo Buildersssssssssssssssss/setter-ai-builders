@@ -21,6 +21,8 @@ htmlcov/
 
 # Archivos de referencia/ejemplo
 graph_example.py
+render_graph.py
+setter_graph.png
 
 # IDE
 .idea/
