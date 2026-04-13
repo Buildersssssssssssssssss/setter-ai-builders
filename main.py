@@ -6,7 +6,6 @@ import json
 import os
 import random
 
-import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,8 +15,6 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 VERIFY_TOKEN = os.environ.get("INSTAGRAM_VERIFY_TOKEN", "")
-IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "")
-GRAPH_URL = "https://graph.instagram.com/v25.0/me/messages"
 
 # Modo test: solo procesa mensajes de sender_ids en la whitelist
 # BOOL_TEST=true  →  activa el filtro
@@ -178,7 +175,7 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
     return {"status": "ok"}
 
 
-# ── Lógica principal: agente + envío ─────────────────────────────────────────
+# ── Lógica principal: agente (el envío ocurre dentro del grafo vía tools) ─────
 
 async def process_and_reply(
     recipient_id: str,
@@ -203,34 +200,7 @@ async def process_and_reply(
         "customer_message": text,
         "trigger_type": trigger_type,
     })
-    print(f"[REPLY] call_setter_ai result={result}")
-
-    reply_text = result.get("message") or result.get("text", "")
-    if reply_text:
-        print(f"[REPLY] Enviando DM a {recipient_id!r}: {reply_text!r}")
-        await send_dm(recipient_id, reply_text)
-    else:
-        print(f"[REPLY] Sin texto para enviar. result={result}")
-
-
-# ── Envío vía Graph API v25.0 ─────────────────────────────────────────────────
-
-async def send_dm(recipient_id: str, message_text: str):
-    payload = {
-        "recipient": {"id": recipient_id},
-        "message": {"text": message_text[:1000]},
-        "messaging_type": "RESPONSE",
-    }
-    print(f"[GRAPH] POST {GRAPH_URL} → recipient={recipient_id!r} token_set={bool(IG_ACCESS_TOKEN)}")
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            GRAPH_URL,
-            json=payload,
-            params={"access_token": IG_ACCESS_TOKEN},
-        )
-        data = response.json()
-        print(f"[GRAPH] response status={response.status_code} data={data}")
-        return data
+    print(f"[REPLY] done — ai_response={result.get('message', '')[:80]!r}")
 
 # --Politica de privacidad y terminos y condiciones ────────────────────────────
 

@@ -7,4 +7,5 @@ pytz==2024.1
 
 # LangChain y LangGraph
 langchain==0.3.25
+langchain-openai==0.3.14
 langgraph==0.6.0

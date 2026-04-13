@@ -6,6 +6,8 @@
 # Python
 __pycache__/
 graph_example.py/
+examples/
+test/
 *.py[cod]
 *$py.class
 .venv/

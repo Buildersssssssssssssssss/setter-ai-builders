@@ -1,5 +1,8 @@
-from typing import Optional
-from typing_extensions import TypedDict
+from typing import List, Optional
+from typing_extensions import Annotated, TypedDict
+
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 
 
 class SetterAIState(TypedDict):
@@ -12,6 +15,9 @@ class SetterAIState(TypedDict):
     customer_message: str
     trigger_type: str               # "dm" | "comment" | "story_reply"
 
+    # Historial de mensajes (reducer add_messages para persistencia con checkpointer)
+    messages: Annotated[List[BaseMessage], add_messages]
+
     # Salida de normalize_input
     normalized_input: Optional[dict]
 
@@ -22,7 +28,7 @@ class SetterAIState(TypedDict):
     publication_context: Optional[str]
     url_to_send: Optional[str]
 
-    # Salida del setter LLM (futuro)
+    # Salida del setter LLM
     ai_response: Optional[str]
 
 
