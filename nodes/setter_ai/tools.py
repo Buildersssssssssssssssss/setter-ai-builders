@@ -16,6 +16,8 @@ def tool_send_dm(
     if not recipient_id:
         return "Error: no hay id_instagram en el estado."
     result = send_instagram_dm(recipient_id, message)
+    if result.get("blocked"):
+        return f"Envío bloqueado por whitelist (recipient_id={recipient_id})."
     if "error" in result:
         return f"Error al enviar DM: {result['error']}"
     return f"DM enviado correctamente a {recipient_id}."
@@ -30,7 +32,10 @@ def tool_reply_to_comment(
     comment_id = state.get("comment_id", "")
     if not comment_id:
         return "Error: no hay comment_id en el estado para responder."
-    result = reply_to_instagram_comment(comment_id, message)
+    recipient_id = state.get("id_instagram", "")
+    result = reply_to_instagram_comment(comment_id, message, recipient_id=recipient_id)
+    if result.get("blocked"):
+        return f"Envío bloqueado por whitelist (recipient_id={recipient_id})."
     if "error" in result:
         return f"Error al responder comentario: {result['error']}"
     return f"Comentario respondido correctamente (comment_id={comment_id})."
