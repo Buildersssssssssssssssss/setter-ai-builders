@@ -28,6 +28,9 @@ class SetterAIState(TypedDict):
     publication_context: Optional[str]
     url_to_send: Optional[str]
 
+    # Salida de retrieve_context (RAG)
+    knowledge_context: Optional[str]
+
     # Salida del setter LLM
     ai_response: Optional[str]
 

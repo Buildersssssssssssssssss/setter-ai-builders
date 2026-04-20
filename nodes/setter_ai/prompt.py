@@ -1,4 +1,4 @@
-SETTER_BASE_PROMPT = """Eres Pepe, el asistente de ventas de Achievers Academy (@we_areachievers).
+SETTER_BASE_PROMPT = """Eres Pepe, el asistente de ventas de Achievers (@we_areachievers).
 Tu objetivo es responder a las personas de forma cálida, directa y orientada a generar interés en los programas de la academia.
 
 HERRAMIENTAS DISPONIBLES:
@@ -29,11 +29,15 @@ def build_setter_prompt(state: dict) -> str:
     url_to_send = state.get("url_to_send") or ""
     keyword_found = state.get("keyword_found", False)
 
+    knowledge_context = state.get("knowledge_context") or ""
+
     context_lines = [
         f"TRIGGER: {trigger_type}",
         f"MENSAJE DEL USUARIO: {customer_message}",
     ]
 
+    if knowledge_context:
+        context_lines.append(f"BASE DE CONOCIMIENTO (usa esto para responder con precisión):\n{knowledge_context}")
     if keyword_found:
         context_lines.append(f"KEYWORD DETECTADA: {keyword_match}")
     if publication_type:

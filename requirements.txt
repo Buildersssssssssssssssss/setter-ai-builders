@@ -8,4 +8,10 @@ pytz==2024.1
 # LangChain y LangGraph
 langchain==0.3.25
 langchain-openai==0.3.14
+langchain-community==0.3.24
 langgraph==0.6.0
+
+# RAG
+supabase==2.16.0
+pypdf==5.4.0
+python-multipart==0.0.20

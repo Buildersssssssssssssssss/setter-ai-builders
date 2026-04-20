@@ -5,9 +5,10 @@ import asyncio
 import json
 import os
 import random
+import tempfile
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, BackgroundTasks, Query, Request
+from fastapi import FastAPI, BackgroundTasks, Query, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, RedirectResponse, HTMLResponse
 from pydantic import BaseModel, Field
@@ -63,6 +64,28 @@ async def setter_ai(input: AgenteInput):
         "id_publicacion": input.id_publicacion,
         "customer_message": input.customer_message,
     })
+
+
+# ── Ingestión RAG ─────────────────────────────────────────────────────────────
+
+@app.post("/ingest")
+async def ingest_document(file: UploadFile = File(...)):
+    from utils.rag import ingest_file
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".pdf", ".md", ".markdown"):
+        return {"error": f"Formato no soportado: {ext}. Usa PDF o MD."}
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    try:
+        count = ingest_file(tmp_path, source_name=file.filename)
+    finally:
+        os.unlink(tmp_path)
+
+    return {"status": "ok", "source": file.filename, "chunks_insertados": count}
 
 
 # ── Verificación del webhook (GET) ────────────────────────────────────────────

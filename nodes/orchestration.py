@@ -4,6 +4,7 @@ from langgraph.graph import END, StateGraph
 
 from nodes.check_publication import check_publication
 from nodes.normalize_input import SetterAIState, normalize_input
+from nodes.retrieve_context import retrieve_context
 from nodes.setter_ai.agent_setter_ai import (
     call_model_setter_ai,
     safe_tool_node_setter_ai,
@@ -15,13 +16,14 @@ def _route_after_normalize(state: SetterAIState) -> str:
     trigger_type = state.get("trigger_type", "dm")
     if trigger_type in ("comment", "story_reply"):
         return "check_publication"
-    return "setter_ai"
+    return "retrieve_context"
 
 
 grafo_setter = StateGraph(SetterAIState)
 
 grafo_setter.add_node("normalize_input", normalize_input)
 grafo_setter.add_node("check_publication", check_publication)
+grafo_setter.add_node("retrieve_context", retrieve_context)
 grafo_setter.add_node("setter_ai", call_model_setter_ai)
 grafo_setter.add_node("tools", safe_tool_node_setter_ai)
 
@@ -30,10 +32,12 @@ grafo_setter.set_entry_point("normalize_input")
 grafo_setter.add_conditional_edges(
     "normalize_input",
     _route_after_normalize,
-    {"check_publication": "check_publication", "setter_ai": "setter_ai"},
+    {"check_publication": "check_publication", "retrieve_context": "retrieve_context"},
 )
 
-grafo_setter.add_edge("check_publication", "setter_ai")
+# Después de check_publication también pasa por retrieve_context
+grafo_setter.add_edge("check_publication", "retrieve_context")
+grafo_setter.add_edge("retrieve_context", "setter_ai")
 
 grafo_setter.add_conditional_edges(
     "setter_ai",
