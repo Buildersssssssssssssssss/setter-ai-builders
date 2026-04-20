@@ -3,8 +3,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 from nodes.check_publication import check_publication
+from nodes.enrich_user import enrich_user
 from nodes.normalize_input import SetterAIState, normalize_input
+from nodes.qualify_lead import qualify_lead
 from nodes.retrieve_context import retrieve_context
+from nodes.save_lead import save_lead
 from nodes.setter_ai.agent_setter_ai import (
     call_model_setter_ai,
     safe_tool_node_setter_ai,
@@ -21,13 +24,17 @@ def _route_after_normalize(state: SetterAIState) -> str:
 
 grafo_setter = StateGraph(SetterAIState)
 
+grafo_setter.add_node("enrich_user", enrich_user)
 grafo_setter.add_node("normalize_input", normalize_input)
 grafo_setter.add_node("check_publication", check_publication)
 grafo_setter.add_node("retrieve_context", retrieve_context)
+grafo_setter.add_node("qualify_lead", qualify_lead)
 grafo_setter.add_node("setter_ai", call_model_setter_ai)
 grafo_setter.add_node("tools", safe_tool_node_setter_ai)
+grafo_setter.add_node("save_lead", save_lead)
 
-grafo_setter.set_entry_point("normalize_input")
+grafo_setter.set_entry_point("enrich_user")
+grafo_setter.add_edge("enrich_user", "normalize_input")
 
 grafo_setter.add_conditional_edges(
     "normalize_input",
@@ -35,17 +42,18 @@ grafo_setter.add_conditional_edges(
     {"check_publication": "check_publication", "retrieve_context": "retrieve_context"},
 )
 
-# Después de check_publication también pasa por retrieve_context
 grafo_setter.add_edge("check_publication", "retrieve_context")
-grafo_setter.add_edge("retrieve_context", "setter_ai")
+grafo_setter.add_edge("retrieve_context", "qualify_lead")
+grafo_setter.add_edge("qualify_lead", "setter_ai")
 
 grafo_setter.add_conditional_edges(
     "setter_ai",
     tools_condition_setter_ai,
-    {"tools": "tools", "__end__": END},
+    {"tools": "tools", "__end__": "save_lead"},
 )
 
 grafo_setter.add_edge("tools", "setter_ai")
+grafo_setter.add_edge("save_lead", END)
 
 memory = MemorySaver()
 setter_agent = grafo_setter.compile(checkpointer=memory)
@@ -74,9 +82,11 @@ def call_setter_ai(input_data: dict) -> dict:
     print(
         f"[ORCHESTRATION] "
         f"trigger={result.get('trigger_type')!r} "
-        f"keyword_found={result.get('keyword_found')} "
-        f"keyword_match={result.get('keyword_match')!r} "
-        f"url_to_send={result.get('url_to_send')!r} "
+        f"phase={result.get('conversation_phase')!r} "
+        f"score_virtual={result.get('score_virtual')} "
+        f"score_inmersivo={result.get('score_inmersivo')} "
+        f"programa={result.get('programa_recomendado')!r} "
+        f"prioridad={result.get('prioridad_comercial')!r} "
         f"ai_response={last_text[:80]!r}"
     )
     return {"message": last_text}

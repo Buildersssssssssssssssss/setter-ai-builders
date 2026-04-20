@@ -28,8 +28,30 @@ class SetterAIState(TypedDict):
     publication_context: Optional[str]
     url_to_send: Optional[str]
 
+    # Salida de enrich_user (perfil de Instagram)
+    user_name: Optional[str]
+    user_username: Optional[str]
+    user_profile_pic: Optional[str]
+    user_follower_count: Optional[int]
+    user_is_verified: Optional[bool]
+
     # Salida de retrieve_context (RAG)
     knowledge_context: Optional[str]
+
+    # Estado de la conversación de setting
+    conversation_phase: Optional[str]   # "open" | "qualify" | "pitch" | "closed"
+    messages_count: Optional[int]       # número de turnos del usuario
+
+    # Salida de qualify_lead
+    score_virtual: Optional[int]
+    score_inmersivo: Optional[int]
+    nivel_virtual: Optional[str]        # "bajo" | "medio" | "alto" | "descalificado"
+    nivel_inmersivo: Optional[str]
+    programa_recomendado: Optional[str] # "virtual" | "inmersivo" | "dual" | "nurture" | "descalificado"
+    prioridad_comercial: Optional[str]  # "alta" | "media" | "baja"
+    fit_financiero: Optional[int]
+    driver: Optional[str]               # resumen del dolor/deseo detectado
+    notas_calificacion: Optional[str]
 
     # Salida del setter LLM
     ai_response: Optional[str]
