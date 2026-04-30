@@ -1,6 +1,6 @@
 from nodes.setter_ai.qualification_rules import SETTING_PHASES
 
-SETTER_BASE_PROMPT = """Eres Nico, el setter de ventas de Achievers Academy (@we_areachievers).
+SETTER_BASE_PROMPT = """Eres el setter de ventas de AI Builders (@ai__builders).
 Tu objetivo es calificar, calentar y agendar llamadas calificadas.
 
 HERRAMIENTAS DISPONIBLES:
@@ -12,14 +12,18 @@ INSTRUCCIONES CRÍTICAS:
 - Después de ejecutar la herramienta, confirma brevemente que se envió.
 - NO envíes el mismo mensaje dos veces.
 - Si hay una URL disponible, inclúyela al final de forma natural.
-- Mensajes máximo 200 palabras.
-- Usa emojis con moderación, solo cuando aporten calidez.
+- Máximo 3 oraciones por mensaje. Menos es más.
+- NUNCA uses emojis.
+- Usa saltos de línea para separar ideas, no escribas todo en un solo párrafo.
 
-TONO:
-- Cálido, cercano y motivador.
-- Tutear siempre.
-- Natural, nunca robótico ni formal.
-- Conversacional, no un interrogatorio.
+TONO Y ESTILO — MUY IMPORTANTE:
+- Habla como un humano real, no como una IA.
+- Tutear siempre, lenguaje informal y directo.
+- Reacciona primero a lo que dijo el usuario ANTES de hacer la pregunta. Ejemplo: si dijo que quiere crear algo innovador, di algo como "eso suena muy bueno" o "qué interesante" antes de preguntar.
+- Las reacciones deben ser cortas y genuinas, no exageradas. Nada de "¡Increíble!", "¡Perfecto!", "¡Genial!". Mejor: "qué bueno", "tiene mucho sentido", "me parece interesante", "suena bien".
+- Una sola pregunta por mensaje, nunca dos.
+- Las preguntas deben sonar como parte de una conversación, no como un formulario.
+- NUNCA empieces la respuesta con el nombre del usuario.
 """
 
 SETTER_BASE_PROMPT += "\n" + SETTING_PHASES
@@ -75,15 +79,36 @@ def build_setter_prompt(state: dict) -> str:
     if url_to_send:
         context_lines.append(f"URL PARA INCLUIR EN LA RESPUESTA: {url_to_send}")
 
-    phase_instruction = {
-        "open": "Estás en FASE ABRIR: saluda de forma natural y cierra con una pregunta abierta para conocer al usuario.",
-        "qualify": f"Estás en FASE CALIFICAR (turno {messages_count}): haz UNA pregunta de calificación natural. Máximo 5 preguntas en total antes del pitch.",
-        "pitch": "Estás en FASE PITCH: los calificadores están en check. Propón agendar una llamada de forma natural y directa.",
-        "closed": "La conversación está cerrada. Si el usuario escribe de nuevo, retoma con calidez.",
-    }.get(conversation_phase, "")
+    # Caso especial: comment con keyword detectada
+    if trigger_type == "comment" and keyword_found:
+        user_first_name = (user_name or "").split()[0] if user_name else (user_username or "")
+        dm_text = (
+            f"Hola {user_first_name} 👋\n\n"
+            f"Te damos la bienvenida a AI Builders 🐝👷🏽, una comunidad que convierte talento en impacto real por medio de AI.\n\n"
+            f"Te envío la información de tu interés: {url_to_send}\n\n"
+            f"Si tienes alguna duda, cuéntame por acá."
+        ) if url_to_send else (
+            f"Hola {user_first_name} 👋\n\n"
+            f"Te damos la bienvenida a AI Builders 🐝👷🏽, una comunidad que convierte talento en impacto real por medio de AI.\n\n"
+            f"Si tienes alguna duda, cuéntame por acá."
+        )
+        context_lines.append(
+            f"ACCIÓN REQUERIDA — FLUJO ESPECIAL DE KEYWORD EN COMENTARIO:\n"
+            f"1. Ejecuta tool_send_dm con este mensaje exacto (no lo modifiques):\n{dm_text}\n"
+            f"2. Luego ejecuta tool_reply_to_comment con un texto corto como: "
+            f"\"Te envié la info por DM, cualquier duda me avisas\"\n"
+            f"No hagas ninguna pregunta de calificación en esta interacción."
+        )
+    else:
+        phase_instruction = {
+            "open": "Estás en FASE ABRIR: saluda de forma natural y cierra con una pregunta abierta para conocer al usuario.",
+            "qualify": f"Estás en FASE CALIFICAR (turno {messages_count}): haz UNA pregunta de calificación natural. Máximo 5 preguntas en total antes del pitch.",
+            "pitch": "Estás en FASE PITCH: los calificadores están en check. Propón agendar una llamada de forma natural y directa.",
+            "closed": "La conversación está cerrada. Si el usuario escribe de nuevo, retoma con calidez.",
+        }.get(conversation_phase, "")
 
-    if phase_instruction:
-        context_lines.append(f"INSTRUCCIÓN DE FASE: {phase_instruction}")
+        if phase_instruction:
+            context_lines.append(f"INSTRUCCIÓN DE FASE: {phase_instruction}")
 
     context_block = "\n".join(context_lines)
     return f"{SETTER_BASE_PROMPT}\nCONTEXTO ACTUAL:\n{context_block}"
@@ -92,7 +117,7 @@ def build_setter_prompt(state: dict) -> str:
 def build_qualification_prompt(conversation_summary: str) -> str:
     from nodes.setter_ai.qualification_rules import QUALIFICATION_RULES
 
-    return f"""Eres un sistema de calificación de leads para Achievers Academy.
+    return f"""Eres un sistema de calificación de leads para AI Builders.
 Analiza la siguiente conversación y devuelve un JSON con la calificación del lead.
 
 {QUALIFICATION_RULES}

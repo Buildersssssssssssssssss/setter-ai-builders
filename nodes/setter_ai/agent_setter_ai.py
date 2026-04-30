@@ -6,7 +6,7 @@ from nodes.setter_ai.prompt import build_setter_prompt
 from nodes.setter_ai.tools import tools_setter_ai
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.4)
-llm_with_tools = llm.bind_tools(tools_setter_ai)
+llm_with_tools = llm.bind_tools(tools_setter_ai, parallel_tool_calls=False)
 
 
 def call_model_setter_ai(state: dict) -> dict:

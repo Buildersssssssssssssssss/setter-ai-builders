@@ -1,5 +1,5 @@
 QUALIFICATION_RULES = """
-## SISTEMA DE CALIFICACIÓN DE LEADS — ACHIEVERS
+## SISTEMA DE CALIFICACIÓN DE LEADS — AI BUILDERS
 
 ### PRINCIPIO CENTRAL
 El eje principal de evaluación NO es si menciona "IA" o "AI".
@@ -101,10 +101,20 @@ Score Inmersivo = A + B + C + D + E + F
 ---
 
 ### FIT FINANCIERO (0–15 pts, complementario)
-  - 0: no tiene capacidad o no muestra interés en asumir la inversión de USD 1,500
-  - 5: tiene interés pero con dudas
-  - 10: puede asumir en cuotas
-  - 15: puede asumir ya o con alta disposición real de pago
+Dos umbrales de inversión según programa:
+- **Cohort Virtual:** referencia de inversión **USD 1,500** (evaluar si la persona puede o quiere asumir ese orden de magnitud).
+- **Programa Inmersivo:** referencia de inversión **USD 5,000** (evaluar capacidad o disposición real para ese nivel; el inmersivo exige mayor capacidad de pago que el virtual).
+
+Escala de puntos (aplica a lo que la conversación permita inferir):
+  - 0: no tiene capacidad o no muestra interés en asumir inversión acorde al programa que encaja (1,500 virtual / 5,000 inmersivo según contexto)
+  - 5: tiene interés pero con dudas o sin claridad sobre monto o forma de pago
+  - 10: puede asumir en cuotas o con plan; o muestra disposición razonable hacia el monto del programa que corresponde (1,500 o 5,000)
+  - 15: puede asumir ya o con alta disposición real de pago al nivel requerido (virtual ~1,500 USD; inmersivo ~5,000 USD cuando el lead encaja con inmersivo)
+
+**Notas para el evaluador:**
+- Si el lead encaja más con **inmersivo**, pondera la capacidad de pago frente a **USD 5,000**.
+- Si encaja más con **virtual**, pondera frente a **USD 1,500**.
+- Si hay señales de que podría asumir el nivel inmersivo (5,000 USD), reflejarlo en `notas_calificacion` y en el score de fit financiero.
 
 ---
 
