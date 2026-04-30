@@ -82,7 +82,7 @@ def check_publication(state: SetterAIState) -> dict:
         return {"keyword_found": False}
 
     pub_row = next(
-        (r for r in rows if r.get("ID Publicacion", "").strip() == str(pub_id)),
+        (r for r in rows if r.get("ID", "").strip() == str(pub_id)),
         None,
     )
 
