@@ -23,7 +23,7 @@ def _normalize_text(text: str) -> str:
 def _fetch_sheet_rows() -> list[dict]:
     url = (
         f"https://sheets.googleapis.com/v4/spreadsheets/"
-        f"{SPREADSHEET_ID}/values/{TAB_NAME}!A:E"
+        f"{SPREADSHEET_ID}/values/{TAB_NAME}!A:H"
     )
     with httpx.Client(timeout=15) as client:
         response = client.get(url, params={"key": GOOGLE_API_KEY})
@@ -35,7 +35,13 @@ def _fetch_sheet_rows() -> list[dict]:
         return []
 
     headers = [h.strip() for h in rows[0]]
-    return [dict(zip(headers, row)) for row in rows[1:] if row]
+    out: list[dict] = []
+    for row in rows[1:]:
+        if not row:
+            continue
+        padded = row + [""] * (len(headers) - len(row))
+        out.append(dict(zip(headers, padded[: len(headers)])))
+    return out
 
 
 def _get_sheet_data() -> list[dict]:
@@ -97,7 +103,7 @@ def check_publication(state: SetterAIState) -> dict:
     result = {
         "keyword_found": matched_keyword is not None,
         "keyword_match": matched_keyword,
-        "publication_type": pub_row.get("Type"),
+        "publication_type": pub_row.get("Tipo") or pub_row.get("Type"),
         "publication_context": pub_row.get("Context"),
         "url_to_send": pub_row.get("URL_info_to_send") if matched_keyword else None,
     }
