@@ -1,6 +1,8 @@
 import os
 import httpx
 
+from utils.whatsapp import send_whatsapp_alert
+
 GRAPH_BASE = "https://graph.instagram.com/v25.0"
 
 
@@ -23,6 +25,18 @@ def _recipient_allowed(recipient_id: str) -> bool:
     return allowed
 
 
+def _alert_failed_dm(recipient_id: str, status_code: int, data: dict) -> None:
+    error_msg = data.get("error", {}).get("message", "error desconocido")
+    msg = (
+        f"*[AI Builders — Setter]*\n"
+        f"No se pudo enviar DM en Instagram.\n\n"
+        f"*IG user ID:* {recipient_id}\n"
+        f"*Error {status_code}:* {error_msg}\n\n"
+        f"Requiere atención manual."
+    )
+    send_whatsapp_alert(msg)
+
+
 def send_instagram_dm(recipient_id: str, text: str) -> dict:
     if not _recipient_allowed(recipient_id):
         return {"blocked": True, "reason": "test_whitelist"}
@@ -39,6 +53,8 @@ def send_instagram_dm(recipient_id: str, text: str) -> dict:
         )
     data = response.json()
     print(f"[IG] send_dm recipient={recipient_id!r} status={response.status_code} data={data}")
+    if response.status_code != 200:
+        _alert_failed_dm(recipient_id, response.status_code, data)
     return data
 
 
