@@ -7,6 +7,17 @@ EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "")
 ALERT_PHONE = os.environ.get("WA_ALERT_PHONE", "")
 
 
+def send_human_escalation_alert(username: str, ig_message: str, phone: str = "") -> dict:
+    msg = (
+        f"*[AI Builders — Setter]*\n"
+        f"Un usuario necesita atención humana.\n\n"
+        f"*Usuario:* @{username}\n"
+        f"*Mensaje:* {ig_message[:300]}\n\n"
+        f"Por favor responder manualmente en Instagram."
+    )
+    return send_whatsapp_alert(msg, phone=phone)
+
+
 def send_whatsapp_alert(message: str, phone: str = "") -> dict:
     target = phone or ALERT_PHONE
     if not all([EVOLUTION_BASE, EVOLUTION_API_KEY, EVOLUTION_INSTANCE, target]):

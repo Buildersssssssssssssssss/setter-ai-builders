@@ -4,6 +4,9 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from utils.instagram import send_instagram_dm, send_instagram_dm_from_comment, reply_to_instagram_comment
+from utils.whatsapp import send_human_escalation_alert
+
+ESCALATION_MARKER = "__HUMAN_ESCALATION_REQUIRED__"
 
 
 @tool
@@ -15,7 +18,8 @@ def tool_send_dm(
     recipient_id = state.get("id_instagram", "")
     if not recipient_id:
         return "Error: no hay id_instagram en el estado."
-    result = send_instagram_dm(recipient_id, message)
+    username = state.get("user_username") or ""
+    result = send_instagram_dm(recipient_id, message, username=username)
     if result.get("blocked"):
         return f"Envío bloqueado por whitelist (recipient_id={recipient_id})."
     if "error" in result:
@@ -51,7 +55,8 @@ def tool_send_dm_from_comment(
     if not comment_id:
         return "Error: no hay comment_id en el estado."
     recipient_id = state.get("id_instagram", "")
-    result = send_instagram_dm_from_comment(comment_id, message, recipient_id=recipient_id)
+    username = state.get("user_username") or ""
+    result = send_instagram_dm_from_comment(comment_id, message, recipient_id=recipient_id, username=username)
     if result.get("blocked"):
         return f"Envío bloqueado por whitelist (recipient_id={recipient_id})."
     if "error" in result:
@@ -59,4 +64,18 @@ def tool_send_dm_from_comment(
     return f"DM enviado correctamente desde comentario (comment_id={comment_id})."
 
 
-tools_setter_ai = [tool_send_dm, tool_send_dm_from_comment, tool_reply_to_comment]
+@tool
+def tool_escalate_to_human(
+    reason: str,
+    state: Annotated[dict, InjectedState()],
+) -> str:
+    """Escala la conversación a un humano cuando el usuario tiene una queja, problema técnico, o necesita atención que el setter no puede resolver. Incluye el motivo de la escalación."""
+    username = state.get("user_username") or state.get("id_instagram", "desconocido")
+    customer_message = state.get("customer_message", "")
+    full_message = f"{reason}\n\nÚltimo mensaje del usuario: {customer_message}"
+    send_human_escalation_alert(username=username, ig_message=full_message)
+    print(f"[ESCALATION] Escalado a humano: @{username} — {reason}")
+    return f"Conversación escalada a un humano. {ESCALATION_MARKER}"
+
+
+tools_setter_ai = [tool_send_dm, tool_send_dm_from_comment, tool_reply_to_comment, tool_escalate_to_human]

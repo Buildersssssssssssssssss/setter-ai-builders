@@ -53,6 +53,9 @@ class SetterAIState(TypedDict):
     driver: Optional[str]               # resumen del dolor/deseo detectado
     notas_calificacion: Optional[str]
 
+    # Escalación a humano
+    human_escalated: Optional[bool]     # True cuando el agente escala a un humano
+
     # Salida del setter LLM
     ai_response: Optional[str]
 

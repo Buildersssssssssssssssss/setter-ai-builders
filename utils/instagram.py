@@ -25,19 +25,20 @@ def _recipient_allowed(recipient_id: str) -> bool:
     return allowed
 
 
-def _alert_failed_dm(recipient_id: str, status_code: int, data: dict) -> None:
+def _alert_failed_dm(recipient_id: str, status_code: int, data: dict, username: str = "") -> None:
     error_msg = data.get("error", {}).get("message", "error desconocido")
+    identifier = f"@{username}" if username else f"ID: {recipient_id}"
     msg = (
         f"*[AI Builders — Setter]*\n"
         f"No se pudo enviar DM en Instagram.\n\n"
-        f"*IG user ID:* {recipient_id}\n"
+        f"*Usuario:* {identifier}\n"
         f"*Error {status_code}:* {error_msg}\n\n"
         f"Requiere atención manual."
     )
     send_whatsapp_alert(msg)
 
 
-def send_instagram_dm(recipient_id: str, text: str) -> dict:
+def send_instagram_dm(recipient_id: str, text: str, username: str = "") -> dict:
     if not _recipient_allowed(recipient_id):
         return {"blocked": True, "reason": "test_whitelist"}
     payload = {
@@ -54,11 +55,11 @@ def send_instagram_dm(recipient_id: str, text: str) -> dict:
     data = response.json()
     print(f"[IG] send_dm recipient={recipient_id!r} status={response.status_code} data={data}")
     if response.status_code != 200:
-        _alert_failed_dm(recipient_id, response.status_code, data)
+        _alert_failed_dm(recipient_id, response.status_code, data, username=username)
     return data
 
 
-def send_instagram_dm_from_comment(comment_id: str, text: str, recipient_id: str = "") -> dict:
+def send_instagram_dm_from_comment(comment_id: str, text: str, recipient_id: str = "", username: str = "") -> dict:
     """Envía un DM usando el comment_id como recipient, sin restricción de ventana de 24h."""
     if recipient_id and not _recipient_allowed(recipient_id):
         return {"blocked": True, "reason": "test_whitelist"}
@@ -75,7 +76,7 @@ def send_instagram_dm_from_comment(comment_id: str, text: str, recipient_id: str
     data = response.json()
     print(f"[IG] dm_from_comment comment_id={comment_id!r} status={response.status_code} data={data}")
     if response.status_code != 200:
-        _alert_failed_dm(recipient_id or comment_id, response.status_code, data)
+        _alert_failed_dm(recipient_id or comment_id, response.status_code, data, username=username)
     return data
 
 

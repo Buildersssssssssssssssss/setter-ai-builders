@@ -3,13 +3,17 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt.tool_node import ToolNode
 
 from nodes.setter_ai.prompt import build_setter_prompt
-from nodes.setter_ai.tools import tools_setter_ai
+from nodes.setter_ai.tools import tools_setter_ai, ESCALATION_MARKER
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.4)
 llm_with_tools = llm.bind_tools(tools_setter_ai, parallel_tool_calls=False)
 
 
 def call_model_setter_ai(state: dict) -> dict:
+    if state.get("human_escalated"):
+        print("[SETTER_AI] Conversación escalada a humano, agente bloqueado.")
+        return {}
+
     system_prompt = SystemMessage(content=build_setter_prompt(state))
     messages = state.get("messages", [])
 
@@ -39,7 +43,14 @@ def tools_condition_setter_ai(state: dict) -> str:
 
 def safe_tool_node_setter_ai(state: dict) -> dict:
     try:
-        return ToolNode(tools_setter_ai).invoke(state)
+        result = ToolNode(tools_setter_ai).invoke(state)
+        # Si alguna tool devuelve el marker de escalación, actualizar el estado
+        for msg in result.get("messages", []):
+            if ESCALATION_MARKER in str(getattr(msg, "content", "")):
+                result["human_escalated"] = True
+                print("[SETTER_AI] Estado de escalación activado.")
+                break
+        return result
     except Exception as e:
         print(f"[SETTER_AI] Error en tool node: {e}")
         return {"messages": [AIMessage(content="Error al ejecutar la herramienta.")]}

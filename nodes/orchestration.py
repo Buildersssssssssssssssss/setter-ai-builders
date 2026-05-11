@@ -15,6 +15,13 @@ from nodes.setter_ai.agent_setter_ai import (
 )
 
 
+def _route_after_qualify(state: SetterAIState) -> str:
+    if state.get("human_escalated"):
+        print("[ORCHESTRATION] Conversación escalada, saltando setter_ai.")
+        return "save_lead"
+    return "setter_ai"
+
+
 def _route_after_normalize(state: SetterAIState) -> str:
     trigger_type = state.get("trigger_type", "dm")
     if trigger_type in ("comment", "story_reply"):
@@ -44,7 +51,11 @@ grafo_setter.add_conditional_edges(
 
 grafo_setter.add_edge("check_publication", "retrieve_context")
 grafo_setter.add_edge("retrieve_context", "qualify_lead")
-grafo_setter.add_edge("qualify_lead", "setter_ai")
+grafo_setter.add_conditional_edges(
+    "qualify_lead",
+    _route_after_qualify,
+    {"setter_ai": "setter_ai", "save_lead": "save_lead"},
+)
 
 grafo_setter.add_conditional_edges(
     "setter_ai",
