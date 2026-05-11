@@ -2,6 +2,7 @@ import os
 import httpx
 
 from utils.whatsapp import send_whatsapp_alert
+from utils.rate_limiter import block_after_403
 
 GRAPH_BASE = "https://graph.instagram.com/v25.0"
 
@@ -36,6 +37,8 @@ def _alert_failed_dm(recipient_id: str, status_code: int, data: dict, username: 
         f"Requiere atención manual."
     )
     send_whatsapp_alert(msg)
+    if status_code == 403:
+        block_after_403(recipient_id)
 
 
 def send_instagram_dm(recipient_id: str, text: str, username: str = "") -> dict:

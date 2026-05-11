@@ -15,3 +15,6 @@ langgraph==0.6.0
 supabase==2.16.0
 pypdf==5.4.0
 python-multipart==0.0.20
+
+# Rate limiting
+redis>=5.0.0

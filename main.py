@@ -15,7 +15,12 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
+from utils.rate_limiter import can_respond, record_response  # noqa: E402
+
 VERIFY_TOKEN = os.environ.get("INSTAGRAM_VERIFY_TOKEN", "")
+
+SETTER_MIN_DELAY = float(os.environ.get("SETTER_MIN_DELAY", "15"))
+SETTER_MAX_DELAY = float(os.environ.get("SETTER_MAX_DELAY", "45"))
 
 # Modo test: solo procesa mensajes de sender_ids en la whitelist
 # BOOL_TEST=true  →  activa el filtro
@@ -26,6 +31,10 @@ TEST_WHITELIST: set[str] = {
     for sid in os.environ.get("TEST_WHITELIST", "").split(",")
     if sid.strip()
 }
+
+
+def _rate_check(sender_id: str) -> tuple[bool, str]:
+    return can_respond(sender_id)
 
 
 def _sender_allowed(sender_id: str) -> bool:
@@ -122,13 +131,17 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 text = value.get("message", {}).get("text", "")
                 print(f"[WEBHOOK] DM (changes) → sender_id={sender_id!r} text={text!r}")
                 if sender_id and text and _sender_allowed(sender_id):
-                    background_tasks.add_task(
-                        process_and_reply,
-                        recipient_id=sender_id,
-                        text=text,
-                        trigger_type="dm",
-                    )
-                    tasks_scheduled += 1
+                    allowed, reason = _rate_check(sender_id)
+                    if allowed:
+                        background_tasks.add_task(
+                            process_and_reply,
+                            recipient_id=sender_id,
+                            text=text,
+                            trigger_type="dm",
+                        )
+                        tasks_scheduled += 1
+                    else:
+                        print(f"[RATE] DM ignorado sender_id={sender_id!r}: {reason}")
 
             elif field == "comments":
                 sender_id = value.get("from", {}).get("id")
@@ -137,15 +150,19 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 comment_id = value.get("id")
                 print(f"[WEBHOOK] Comentario → sender_id={sender_id!r} text={text!r}")
                 if sender_id and text and _sender_allowed(sender_id):
-                    background_tasks.add_task(
-                        process_and_reply,
-                        recipient_id=sender_id,
-                        text=text,
-                        trigger_type="comment",
-                        post_id=post_id,
-                        comment_id=comment_id,
-                    )
-                    tasks_scheduled += 1
+                    allowed, reason = _rate_check(sender_id)
+                    if allowed:
+                        background_tasks.add_task(
+                            process_and_reply,
+                            recipient_id=sender_id,
+                            text=text,
+                            trigger_type="comment",
+                            post_id=post_id,
+                            comment_id=comment_id,
+                        )
+                        tasks_scheduled += 1
+                    else:
+                        print(f"[RATE] Comentario ignorado sender_id={sender_id!r}: {reason}")
 
             else:
                 print(f"[WEBHOOK] campo ignorado: {field!r}")
@@ -184,15 +201,19 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 print(f"[WEBHOOK] DM (messaging) → sender_id={sender_id!r} text={text!r}")
 
             if _sender_allowed(sender_id):
-                background_tasks.add_task(
-                    process_and_reply,
-                    recipient_id=sender_id,
-                    text=text,
-                    trigger_type=event_trigger_type,
-                    story_id=story_id,
-                    story_link=story_link,
-                )
-                tasks_scheduled += 1
+                allowed, reason = _rate_check(sender_id)
+                if allowed:
+                    background_tasks.add_task(
+                        process_and_reply,
+                        recipient_id=sender_id,
+                        text=text,
+                        trigger_type=event_trigger_type,
+                        story_id=story_id,
+                        story_link=story_link,
+                    )
+                    tasks_scheduled += 1
+                else:
+                    print(f"[RATE] Mensaje ignorado sender_id={sender_id!r}: {reason}")
 
     print(f"[WEBHOOK] tasks_scheduled={tasks_scheduled}")
     return {"status": "ok"}
@@ -212,7 +233,13 @@ async def process_and_reply(
     from nodes.orchestration import call_setter_ai
 
     print(f"[REPLY] trigger={trigger_type} recipient={recipient_id!r} text={text!r}")
-    await asyncio.sleep(random.uniform(3, 9))
+
+    # Delay humanizado: distribución no uniforme para parecer más natural
+    base = random.uniform(SETTER_MIN_DELAY, SETTER_MAX_DELAY)
+    jitter = random.gauss(0, 3)
+    delay = max(SETTER_MIN_DELAY, base + jitter)
+    print(f"[REPLY] delay={delay:.1f}s")
+    await asyncio.sleep(delay)
 
     result = call_setter_ai({
         "id_instagram": recipient_id,
@@ -224,6 +251,7 @@ async def process_and_reply(
         "trigger_type": trigger_type,
     })
     print(f"[REPLY] done — ai_response={result.get('message', '')[:80]!r}")
+    record_response(recipient_id)
 
 # --Politica de privacidad y terminos y condiciones ────────────────────────────
 
