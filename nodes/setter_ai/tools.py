@@ -3,7 +3,7 @@ from typing_extensions import Annotated
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
-from utils.instagram import send_instagram_dm, reply_to_instagram_comment
+from utils.instagram import send_instagram_dm, send_instagram_dm_from_comment, reply_to_instagram_comment
 
 
 @tool
@@ -41,4 +41,22 @@ def tool_reply_to_comment(
     return f"Comentario respondido correctamente (comment_id={comment_id})."
 
 
-tools_setter_ai = [tool_send_dm, tool_reply_to_comment]
+@tool
+def tool_send_dm_from_comment(
+    message: str,
+    state: Annotated[dict, InjectedState()],
+) -> str:
+    """Envía un DM al usuario usando su comment_id como origen. Úsala cuando el trigger es 'comment' y se detectó una keyword, ya que no requiere ventana de 24h."""
+    comment_id = state.get("comment_id", "")
+    if not comment_id:
+        return "Error: no hay comment_id en el estado."
+    recipient_id = state.get("id_instagram", "")
+    result = send_instagram_dm_from_comment(comment_id, message, recipient_id=recipient_id)
+    if result.get("blocked"):
+        return f"Envío bloqueado por whitelist (recipient_id={recipient_id})."
+    if "error" in result:
+        return f"Error al enviar DM desde comentario: {result['error']}"
+    return f"DM enviado correctamente desde comentario (comment_id={comment_id})."
+
+
+tools_setter_ai = [tool_send_dm, tool_send_dm_from_comment, tool_reply_to_comment]

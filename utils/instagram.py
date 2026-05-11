@@ -58,6 +58,27 @@ def send_instagram_dm(recipient_id: str, text: str) -> dict:
     return data
 
 
+def send_instagram_dm_from_comment(comment_id: str, text: str, recipient_id: str = "") -> dict:
+    """Envía un DM usando el comment_id como recipient, sin restricción de ventana de 24h."""
+    if recipient_id and not _recipient_allowed(recipient_id):
+        return {"blocked": True, "reason": "test_whitelist"}
+    payload = {
+        "recipient": {"comment_id": comment_id},
+        "message": {"text": text[:1000]},
+    }
+    with httpx.Client(timeout=30) as client:
+        response = client.post(
+            f"{GRAPH_BASE}/me/messages",
+            json=payload,
+            params={"access_token": _token()},
+        )
+    data = response.json()
+    print(f"[IG] dm_from_comment comment_id={comment_id!r} status={response.status_code} data={data}")
+    if response.status_code != 200:
+        _alert_failed_dm(recipient_id or comment_id, response.status_code, data)
+    return data
+
+
 def reply_to_instagram_comment(comment_id: str, text: str, recipient_id: str = "") -> dict:
     if recipient_id and not _recipient_allowed(recipient_id):
         return {"blocked": True, "reason": "test_whitelist"}

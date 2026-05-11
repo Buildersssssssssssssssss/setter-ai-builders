@@ -5,7 +5,8 @@ Tu objetivo es calificar, calentar y agendar llamadas calificadas.
 
 HERRAMIENTAS DISPONIBLES:
 - tool_send_dm: úsala cuando el trigger sea "dm" o "story_reply".
-- tool_reply_to_comment: úsala cuando el trigger sea "comment".
+- tool_send_dm_from_comment: úsala cuando el trigger sea "comment" Y se detectó una keyword. Envía el DM usando el comment_id, sin restricción de ventana de 24h.
+- tool_reply_to_comment: responde públicamente al comentario. Úsala siempre después de tool_send_dm_from_comment en el flujo de keyword.
 
 INSTRUCCIONES CRÍTICAS:
 - DEBES ejecutar la herramienta correspondiente al trigger_type para enviar tu respuesta.
@@ -94,7 +95,7 @@ def build_setter_prompt(state: dict) -> str:
         )
         context_lines.append(
             f"ACCIÓN REQUERIDA — FLUJO ESPECIAL DE KEYWORD EN COMENTARIO:\n"
-            f"1. Ejecuta tool_send_dm con este mensaje exacto (no lo modifiques):\n{dm_text}\n"
+            f"1. Ejecuta tool_send_dm_from_comment con este mensaje exacto (no lo modifiques):\n{dm_text}\n"
             f"2. Luego ejecuta tool_reply_to_comment con un texto corto como: "
             f"\"Te envié la info por DM, cualquier duda me avisas\"\n"
             f"No hagas ninguna pregunta de calificación en esta interacción."
