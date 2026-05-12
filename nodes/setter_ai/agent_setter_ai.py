@@ -4,6 +4,7 @@ from langgraph.prebuilt.tool_node import ToolNode
 
 from nodes.setter_ai.prompt import build_setter_prompt
 from nodes.setter_ai.tools import tools_setter_ai, ESCALATION_MARKER
+from utils.rate_limiter import set_human_escalated
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.4)
 llm_with_tools = llm.bind_tools(tools_setter_ai, parallel_tool_calls=False)
@@ -44,11 +45,13 @@ def tools_condition_setter_ai(state: dict) -> str:
 def safe_tool_node_setter_ai(state: dict) -> dict:
     try:
         result = ToolNode(tools_setter_ai).invoke(state)
-        # Si alguna tool devuelve el marker de escalación, actualizar el estado
         for msg in result.get("messages", []):
             if ESCALATION_MARKER in str(getattr(msg, "content", "")):
+                sender_id = state.get("id_instagram", "")
+                if sender_id:
+                    set_human_escalated(sender_id)  # persiste en Redis con TTL 48h
                 result["human_escalated"] = True
-                print("[SETTER_AI] Estado de escalación activado.")
+                print("[SETTER_AI] Escalación persistida en Redis (48h TTL).")
                 break
         return result
     except Exception as e:

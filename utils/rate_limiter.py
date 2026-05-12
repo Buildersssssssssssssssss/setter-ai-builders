@@ -18,6 +18,7 @@ RATE_LIMIT_DAILY = int(os.environ.get("RATE_LIMIT_DAILY", "10"))
 RATE_BLOCK_403_HOURS = int(os.environ.get("RATE_BLOCK_403_HOURS", "24"))
 BUSINESS_HOURS_START = int(os.environ.get("BUSINESS_HOURS_START", "7"))
 BUSINESS_HOURS_END = int(os.environ.get("BUSINESS_HOURS_END", "23"))
+ESCALATION_TTL_HOURS = int(os.environ.get("ESCALATION_TTL_HOURS", "48"))
 
 TZ_COLOMBIA = ZoneInfo("America/Bogota")
 
@@ -117,6 +118,43 @@ def record_response(sender_id: str) -> None:
         pipe.execute()
     except Exception as e:
         print(f"[RATE] Error registrando respuesta en Redis: {e}")
+
+
+def set_human_escalated(sender_id: str) -> None:
+    """Marca al usuario como escalado a humano. El setter lo ignorará por ESCALATION_TTL_HOURS horas."""
+    r = _get_redis()
+    if r is None:
+        print(f"[RATE] Redis no disponible, escalación no persistida para {sender_id!r}")
+        return
+    try:
+        ttl_seconds = ESCALATION_TTL_HOURS * 3600
+        r.setex(f"setter:escalated:{sender_id}", ttl_seconds, "1")
+        print(f"[RATE] sender_id={sender_id!r} escalado a humano, TTL={ESCALATION_TTL_HOURS}h")
+    except Exception as e:
+        print(f"[RATE] Error guardando escalación en Redis: {e}")
+
+
+def is_human_escalated(sender_id: str) -> bool:
+    """Retorna True si el usuario está marcado como escalado a humano."""
+    r = _get_redis()
+    if r is None:
+        return False
+    try:
+        return r.exists(f"setter:escalated:{sender_id}") == 1
+    except Exception:
+        return False
+
+
+def clear_human_escalated(sender_id: str) -> None:
+    """Desactiva manualmente la escalación para un usuario (para uso futuro desde endpoint)."""
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        r.delete(f"setter:escalated:{sender_id}")
+        print(f"[RATE] Escalación removida para sender_id={sender_id!r}")
+    except Exception as e:
+        print(f"[RATE] Error removiendo escalación: {e}")
 
 
 def block_after_403(sender_id: str) -> None:

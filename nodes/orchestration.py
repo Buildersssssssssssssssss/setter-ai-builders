@@ -13,11 +13,14 @@ from nodes.setter_ai.agent_setter_ai import (
     safe_tool_node_setter_ai,
     tools_condition_setter_ai,
 )
+from utils.rate_limiter import is_human_escalated
 
 
 def _route_after_qualify(state: SetterAIState) -> str:
-    if state.get("human_escalated"):
-        print("[ORCHESTRATION] Conversación escalada, saltando setter_ai.")
+    sender_id = state.get("id_instagram", "")
+    # Consulta Redis (persiste entre deploys y expira automáticamente a las 48h)
+    if state.get("human_escalated") or (sender_id and is_human_escalated(sender_id)):
+        print(f"[ORCHESTRATION] sender_id={sender_id!r} escalado, saltando setter_ai.")
         return "save_lead"
     return "setter_ai"
 
