@@ -3,6 +3,8 @@ from typing_extensions import Annotated
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
+import os
+
 from utils.instagram import send_instagram_dm, send_instagram_dm_from_comment, reply_to_instagram_comment
 from utils.whatsapp import send_human_escalation_alert
 
@@ -70,10 +72,18 @@ def tool_escalate_to_human(
     state: Annotated[dict, InjectedState()],
 ) -> str:
     """Escala la conversación a un humano cuando el usuario tiene una queja, problema técnico, o necesita atención que el setter no puede resolver. Incluye el motivo de la escalación."""
-    username = state.get("user_username") or state.get("id_instagram", "desconocido")
+    sender_id = state.get("id_instagram", "")
+    username = state.get("user_username") or sender_id or "desconocido"
     customer_message = state.get("customer_message", "")
     full_message = f"{reason}\n\nÚltimo mensaje del usuario: {customer_message}"
-    send_human_escalation_alert(username=username, ig_message=full_message)
+
+    reactivation_url = ""
+    base_url = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    admin_token = os.environ.get("ADMIN_TOKEN", "")
+    if base_url and admin_token and sender_id:
+        reactivation_url = f"{base_url}/admin/unescalate/{sender_id}?token={admin_token}"
+
+    send_human_escalation_alert(username=username, ig_message=full_message, reactivation_url=reactivation_url)
     print(f"[ESCALATION] Escalado a humano: @{username} — {reason}")
     return f"Conversación escalada a un humano. {ESCALATION_MARKER}"
 

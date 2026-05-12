@@ -15,7 +15,9 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-from utils.rate_limiter import can_respond, record_response  # noqa: E402
+from utils.rate_limiter import can_respond, record_response, clear_human_escalated  # noqa: E402
+
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
 VERIFY_TOKEN = os.environ.get("INSTAGRAM_VERIFY_TOKEN", "")
 
@@ -252,6 +254,23 @@ async def process_and_reply(
     })
     print(f"[REPLY] done — ai_response={result.get('message', '')[:80]!r}")
     record_response(recipient_id)
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.get("/admin/unescalate/{sender_id}", response_class=HTMLResponse)
+async def unescalate_user(sender_id: str, token: str = ""):
+    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
+        return HTMLResponse(content="<h2>No autorizado</h2>", status_code=403)
+    clear_human_escalated(sender_id)
+    print(f"[ADMIN] Escalación removida manualmente para sender_id={sender_id!r}")
+    return HTMLResponse(content=f"""
+    <html><body style="font-family:sans-serif;padding:2rem;">
+    <h2>Setter reactivado</h2>
+    <p>El setter volvió a estar activo para el usuario <strong>{sender_id}</strong>.</p>
+    <p>El próximo mensaje de ese usuario será procesado normalmente.</p>
+    </body></html>
+    """)
+
 
 # --Politica de privacidad y terminos y condiciones ────────────────────────────
 
