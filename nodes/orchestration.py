@@ -18,8 +18,8 @@ from utils.rate_limiter import is_human_escalated
 
 def _route_after_qualify(state: SetterAIState) -> str:
     sender_id = state.get("id_instagram", "")
-    # Consulta Redis (persiste entre deploys y expira automáticamente a las 48h)
-    if state.get("human_escalated") or (sender_id and is_human_escalated(sender_id)):
+    # Redis es la única fuente de verdad para la escalación
+    if sender_id and is_human_escalated(sender_id):
         print(f"[ORCHESTRATION] sender_id={sender_id!r} escalado, saltando setter_ai.")
         return "save_lead"
     return "setter_ai"
