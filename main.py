@@ -15,9 +15,10 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-from utils.rate_limiter import can_respond, record_response, clear_human_escalated  # noqa: E402
+from utils.rate_limiter import can_respond, record_response, clear_human_escalated, is_event_seen  # noqa: E402
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+IG_ACCOUNT_ID = os.environ.get("IG_ACCOUNT_ID", "")
 
 VERIFY_TOKEN = os.environ.get("INSTAGRAM_VERIFY_TOKEN", "")
 
@@ -37,6 +38,13 @@ TEST_WHITELIST: set[str] = {
 
 def _rate_check(sender_id: str) -> tuple[bool, str]:
     return can_respond(sender_id)
+
+
+def _is_own_account(sender_id: str) -> bool:
+    if IG_ACCOUNT_ID and sender_id == IG_ACCOUNT_ID:
+        print(f"[SELF] Evento de la propia cuenta ignorado sender_id={sender_id!r}")
+        return True
+    return False
 
 
 def _sender_allowed(sender_id: str) -> bool:
@@ -131,19 +139,23 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
             if field == "messages":
                 sender_id = value.get("sender", {}).get("id")
                 text = value.get("message", {}).get("text", "")
+                mid = value.get("message", {}).get("mid", "")
                 print(f"[WEBHOOK] DM (changes) → sender_id={sender_id!r} text={text!r}")
-                if sender_id and text and _sender_allowed(sender_id):
-                    allowed, reason = _rate_check(sender_id)
-                    if allowed:
-                        background_tasks.add_task(
-                            process_and_reply,
-                            recipient_id=sender_id,
-                            text=text,
-                            trigger_type="dm",
-                        )
-                        tasks_scheduled += 1
+                if sender_id and text and not _is_own_account(sender_id) and _sender_allowed(sender_id):
+                    if mid and is_event_seen(mid):
+                        print(f"[DEDUP] DM duplicado ignorado mid={mid!r}")
                     else:
-                        print(f"[RATE] DM ignorado sender_id={sender_id!r}: {reason}")
+                        allowed, reason = _rate_check(sender_id)
+                        if allowed:
+                            background_tasks.add_task(
+                                process_and_reply,
+                                recipient_id=sender_id,
+                                text=text,
+                                trigger_type="dm",
+                            )
+                            tasks_scheduled += 1
+                        else:
+                            print(f"[RATE] DM ignorado sender_id={sender_id!r}: {reason}")
 
             elif field == "comments":
                 sender_id = value.get("from", {}).get("id")
@@ -151,20 +163,23 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 post_id = value.get("media", {}).get("id")
                 comment_id = value.get("id")
                 print(f"[WEBHOOK] Comentario → sender_id={sender_id!r} text={text!r}")
-                if sender_id and text and _sender_allowed(sender_id):
-                    allowed, reason = _rate_check(sender_id)
-                    if allowed:
-                        background_tasks.add_task(
-                            process_and_reply,
-                            recipient_id=sender_id,
-                            text=text,
-                            trigger_type="comment",
-                            post_id=post_id,
-                            comment_id=comment_id,
-                        )
-                        tasks_scheduled += 1
+                if sender_id and text and not _is_own_account(sender_id) and _sender_allowed(sender_id):
+                    if comment_id and is_event_seen(comment_id):
+                        print(f"[DEDUP] Comentario duplicado ignorado comment_id={comment_id!r}")
                     else:
-                        print(f"[RATE] Comentario ignorado sender_id={sender_id!r}: {reason}")
+                        allowed, reason = _rate_check(sender_id)
+                        if allowed:
+                            background_tasks.add_task(
+                                process_and_reply,
+                                recipient_id=sender_id,
+                                text=text,
+                                trigger_type="comment",
+                                post_id=post_id,
+                                comment_id=comment_id,
+                            )
+                            tasks_scheduled += 1
+                        else:
+                            print(f"[RATE] Comentario ignorado sender_id={sender_id!r}: {reason}")
 
             else:
                 print(f"[WEBHOOK] campo ignorado: {field!r}")
@@ -202,20 +217,24 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 story_link = None
                 print(f"[WEBHOOK] DM (messaging) → sender_id={sender_id!r} text={text!r}")
 
-            if _sender_allowed(sender_id):
-                allowed, reason = _rate_check(sender_id)
-                if allowed:
-                    background_tasks.add_task(
-                        process_and_reply,
-                        recipient_id=sender_id,
-                        text=text,
-                        trigger_type=event_trigger_type,
-                        story_id=story_id,
-                        story_link=story_link,
-                    )
-                    tasks_scheduled += 1
+            mid = msg.get("mid", "")
+            if not _is_own_account(sender_id) and _sender_allowed(sender_id):
+                if mid and is_event_seen(mid):
+                    print(f"[DEDUP] Mensaje duplicado ignorado mid={mid!r}")
                 else:
-                    print(f"[RATE] Mensaje ignorado sender_id={sender_id!r}: {reason}")
+                    allowed, reason = _rate_check(sender_id)
+                    if allowed:
+                        background_tasks.add_task(
+                            process_and_reply,
+                            recipient_id=sender_id,
+                            text=text,
+                            trigger_type=event_trigger_type,
+                            story_id=story_id,
+                            story_link=story_link,
+                        )
+                        tasks_scheduled += 1
+                    else:
+                        print(f"[RATE] Mensaje ignorado sender_id={sender_id!r}: {reason}")
 
     print(f"[WEBHOOK] tasks_scheduled={tasks_scheduled}")
     return {"status": "ok"}

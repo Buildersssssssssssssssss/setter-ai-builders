@@ -120,6 +120,23 @@ def record_response(sender_id: str) -> None:
         print(f"[RATE] Error registrando respuesta en Redis: {e}")
 
 
+def is_event_seen(event_id: str) -> bool:
+    """
+    Retorna True si este event_id ya fue procesado (deduplicación).
+    Marca el evento como visto de forma atómica (SET NX). TTL de 10 minutos.
+    Si Redis no está disponible, siempre permite el procesamiento.
+    """
+    r = _get_redis()
+    if r is None:
+        return False
+    try:
+        inserted = r.set(f"setter:seen:{event_id}", "1", nx=True, ex=600)
+        return inserted is None  # None → ya existía → duplicado
+    except Exception as e:
+        print(f"[RATE] Error en deduplicación: {e}. Permitiendo procesamiento.")
+        return False
+
+
 def set_human_escalated(sender_id: str) -> None:
     """Marca al usuario como escalado a humano. El setter lo ignorará por ESCALATION_TTL_HOURS horas."""
     r = _get_redis()
