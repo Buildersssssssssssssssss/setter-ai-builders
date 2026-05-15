@@ -1,3 +1,5 @@
+import os
+
 from nodes.setter_ai.qualification_rules import SETTING_PHASES
 
 SETTER_BASE_PROMPT = """Eres el setter de ventas de AI Builders (@ai__builders).
@@ -102,10 +104,19 @@ def build_setter_prompt(state: dict) -> str:
             f"No hagas ninguna pregunta de calificación en esta interacción."
         )
     else:
+        cal_url = os.environ.get("CAL_BOOKING_URL", "")
+        pitch_instruction = (
+            f"Estás en FASE PITCH: los calificadores están en check. "
+            f"Propón agendar una llamada de forma natural y directa. "
+            f"Incluye este link para que la persona agende directamente: {cal_url}"
+        ) if cal_url else (
+            "Estás en FASE PITCH: los calificadores están en check. Propón agendar una llamada de forma natural y directa."
+        )
+
         phase_instruction = {
             "open": "Estás en FASE ABRIR: saluda de forma natural y cierra con una pregunta abierta para conocer al usuario.",
             "qualify": f"Estás en FASE CALIFICAR (turno {messages_count}): haz UNA pregunta de calificación natural. Máximo 5 preguntas en total antes del pitch.",
-            "pitch": "Estás en FASE PITCH: los calificadores están en check. Propón agendar una llamada de forma natural y directa.",
+            "pitch": pitch_instruction,
             "closed": "La conversación está cerrada. Si el usuario escribe de nuevo, retoma con calidez.",
         }.get(conversation_phase, "")
 
