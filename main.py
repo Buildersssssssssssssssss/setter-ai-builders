@@ -15,7 +15,12 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-from utils.rate_limiter import can_respond, record_response, clear_human_escalated, is_event_seen  # noqa: E402
+from utils.rate_limiter import (  # noqa: E402
+    can_respond, record_response, clear_human_escalated, is_event_seen,
+    buffer_message, pop_buffered_messages, should_alert_rate_limit,
+    MESSAGE_BUFFER_WINDOW,
+)
+from utils.whatsapp import send_whatsapp_alert  # noqa: E402
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 IG_ACCOUNT_ID = os.environ.get("IG_ACCOUNT_ID", "")
@@ -38,6 +43,19 @@ TEST_WHITELIST: set[str] = {
 
 def _rate_check(sender_id: str) -> tuple[bool, str]:
     return can_respond(sender_id)
+
+
+def _alert_rate_limit(sender_id: str, username: str, reason: str) -> None:
+    if not should_alert_rate_limit(sender_id):
+        return
+    msg = (
+        f"*[AI Builders — Setter]*\n"
+        f"Se alcanzó el límite de respuestas automáticas.\n\n"
+        f"*Usuario:* @{username or sender_id}\n"
+        f"*Motivo:* {reason}\n\n"
+        f"Continuar la conversación manualmente en Instagram."
+    )
+    send_whatsapp_alert(msg)
 
 
 def _is_own_account(sender_id: str) -> bool:
@@ -147,15 +165,17 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                     else:
                         allowed, reason = _rate_check(sender_id)
                         if allowed:
-                            background_tasks.add_task(
-                                process_and_reply,
-                                recipient_id=sender_id,
-                                text=text,
-                                trigger_type="dm",
-                            )
-                            tasks_scheduled += 1
+                            is_first = buffer_message(sender_id, text)
+                            if is_first:
+                                background_tasks.add_task(
+                                    process_and_reply,
+                                    recipient_id=sender_id,
+                                    trigger_type="dm",
+                                )
+                                tasks_scheduled += 1
                         else:
                             print(f"[RATE] DM ignorado sender_id={sender_id!r}: {reason}")
+                            _alert_rate_limit(sender_id, "", reason)
 
             elif field == "comments":
                 sender_id = value.get("from", {}).get("id")
@@ -169,17 +189,19 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                     else:
                         allowed, reason = _rate_check(sender_id)
                         if allowed:
-                            background_tasks.add_task(
-                                process_and_reply,
-                                recipient_id=sender_id,
-                                text=text,
-                                trigger_type="comment",
-                                post_id=post_id,
-                                comment_id=comment_id,
-                            )
-                            tasks_scheduled += 1
+                            is_first = buffer_message(sender_id, text)
+                            if is_first:
+                                background_tasks.add_task(
+                                    process_and_reply,
+                                    recipient_id=sender_id,
+                                    trigger_type="comment",
+                                    post_id=post_id,
+                                    comment_id=comment_id,
+                                )
+                                tasks_scheduled += 1
                         else:
                             print(f"[RATE] Comentario ignorado sender_id={sender_id!r}: {reason}")
+                            _alert_rate_limit(sender_id, "", reason)
 
             else:
                 print(f"[WEBHOOK] campo ignorado: {field!r}")
@@ -224,17 +246,19 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
                 else:
                     allowed, reason = _rate_check(sender_id)
                     if allowed:
-                        background_tasks.add_task(
-                            process_and_reply,
-                            recipient_id=sender_id,
-                            text=text,
-                            trigger_type=event_trigger_type,
-                            story_id=story_id,
-                            story_link=story_link,
-                        )
-                        tasks_scheduled += 1
+                        is_first = buffer_message(sender_id, text)
+                        if is_first:
+                            background_tasks.add_task(
+                                process_and_reply,
+                                recipient_id=sender_id,
+                                trigger_type=event_trigger_type,
+                                story_id=story_id,
+                                story_link=story_link,
+                            )
+                            tasks_scheduled += 1
                     else:
                         print(f"[RATE] Mensaje ignorado sender_id={sender_id!r}: {reason}")
+                        _alert_rate_limit(sender_id, "", reason)
 
     print(f"[WEBHOOK] tasks_scheduled={tasks_scheduled}")
     return {"status": "ok"}
@@ -244,7 +268,6 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
 
 async def process_and_reply(
     recipient_id: str,
-    text: str,
     trigger_type: str,
     post_id: str | None = None,
     comment_id: str | None = None,
@@ -253,9 +276,19 @@ async def process_and_reply(
 ):
     from nodes.orchestration import call_setter_ai
 
-    print(f"[REPLY] trigger={trigger_type} recipient={recipient_id!r} text={text!r}")
+    # Esperar la ventana de buffer para acumular mensajes consecutivos
+    await asyncio.sleep(MESSAGE_BUFFER_WINDOW)
 
-    # Delay humanizado: distribución no uniforme para parecer más natural
+    messages = pop_buffered_messages(recipient_id)
+    if not messages:
+        print(f"[REPLY] Buffer vacío para recipient={recipient_id!r}, ignorando")
+        return
+
+    # Unir mensajes consecutivos en un solo texto con separador natural
+    text = " | ".join(messages) if len(messages) > 1 else messages[0]
+    print(f"[REPLY] trigger={trigger_type} recipient={recipient_id!r} mensajes={len(messages)} text={text!r}")
+
+    # Delay humanizado adicional para parecer más natural
     base = random.uniform(SETTER_MIN_DELAY, SETTER_MAX_DELAY)
     jitter = random.gauss(0, 3)
     delay = max(SETTER_MIN_DELAY, base + jitter)

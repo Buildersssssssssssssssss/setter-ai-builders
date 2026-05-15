@@ -120,6 +120,67 @@ def record_response(sender_id: str) -> None:
         print(f"[RATE] Error registrando respuesta en Redis: {e}")
 
 
+MESSAGE_BUFFER_WINDOW = int(os.environ.get("MESSAGE_BUFFER_WINDOW", "6"))
+
+
+def buffer_message(sender_id: str, text: str) -> bool:
+    """
+    Agrega el mensaje al buffer del usuario.
+    Retorna True si es el primer mensaje del batch (se debe programar la tarea).
+    Retorna False si ya hay una tarea programada (solo acumular).
+    """
+    r = _get_redis()
+    if r is None:
+        return True  # sin Redis, procesar inmediatamente
+
+    try:
+        buffer_key = f"setter:buffer:{sender_id}"
+        scheduled_key = f"setter:scheduled:{sender_id}"
+
+        r.rpush(buffer_key, text)
+        r.expire(buffer_key, MESSAGE_BUFFER_WINDOW + 10)
+
+        # SET NX: solo se inserta si no existía → primer mensaje del batch
+        is_first = r.set(scheduled_key, "1", nx=True, ex=MESSAGE_BUFFER_WINDOW + 5)
+        return is_first is not None
+    except Exception as e:
+        print(f"[RATE] Error en buffer de mensajes: {e}. Procesando inmediatamente.")
+        return True
+
+
+def pop_buffered_messages(sender_id: str) -> list[str]:
+    """Lee y elimina todos los mensajes acumulados en el buffer del usuario."""
+    r = _get_redis()
+    if r is None:
+        return []
+    try:
+        buffer_key = f"setter:buffer:{sender_id}"
+        pipe = r.pipeline()
+        pipe.lrange(buffer_key, 0, -1)
+        pipe.delete(buffer_key)
+        results = pipe.execute()
+        return results[0] or []
+    except Exception as e:
+        print(f"[RATE] Error leyendo buffer: {e}")
+        return []
+
+
+def should_alert_rate_limit(sender_id: str) -> bool:
+    """
+    Retorna True la primera vez que se alcanza el límite para este usuario
+    en la sesión actual (evita spam de alertas repetidas).
+    """
+    r = _get_redis()
+    if r is None:
+        return True
+    try:
+        key = f"setter:rate_alerted:{sender_id}"
+        inserted = r.set(key, "1", nx=True, ex=3600)
+        return inserted is not None
+    except Exception:
+        return True
+
+
 def is_event_seen(event_id: str) -> bool:
     """
     Retorna True si este event_id ya fue procesado (deduplicación).
