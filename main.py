@@ -227,6 +227,11 @@ async def instagram_webhook(request: Request, background_tasks: BackgroundTasks)
             if not sender_id:
                 continue
 
+            recipient_account = event.get("recipient", {}).get("id", "")
+            if IG_ACCOUNT_ID and recipient_account and recipient_account != IG_ACCOUNT_ID:
+                print(f"[WEBHOOK] Evento ignorado — recipient={recipient_account!r} no es la cuenta business")
+                continue
+
             story = msg.get("reply_to", {}).get("story", {})
             if story:
                 event_trigger_type = "story_reply"
