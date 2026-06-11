@@ -21,6 +21,7 @@ from utils.rate_limiter import (  # noqa: E402
     MESSAGE_BUFFER_WINDOW,
 )
 from utils.whatsapp import send_whatsapp_alert  # noqa: E402
+from utils.supabase_events import log_event  # noqa: E402
 
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 IG_ACCOUNT_ID = os.environ.get("IG_ACCOUNT_ID", "")
@@ -45,7 +46,8 @@ def _rate_check(sender_id: str) -> tuple[bool, str]:
     return can_respond(sender_id)
 
 
-def _alert_rate_limit(sender_id: str, username: str, reason: str) -> None:
+def _alert_rate_limit(sender_id: str, username: str, reason: str, trigger_type: str = "") -> None:
+    log_event("rate_limit", ig_id=sender_id, ig_username=username, trigger_type=trigger_type, success=False)
     if not should_alert_rate_limit(sender_id):
         return
     msg = (
@@ -279,6 +281,7 @@ async def process_and_reply(
     story_id: str | None = None,
     story_link: str | None = None,
 ):
+    import time
     from nodes.orchestration import call_setter_ai
 
     # Esperar la ventana de buffer para acumular mensajes consecutivos
@@ -300,17 +303,39 @@ async def process_and_reply(
     print(f"[REPLY] delay={delay:.1f}s")
     await asyncio.sleep(delay)
 
-    result = call_setter_ai({
-        "id_instagram": recipient_id,
-        "id_publicacion": post_id,
-        "comment_id": comment_id,
-        "story_id": story_id,
-        "story_link": story_link,
-        "customer_message": text,
-        "trigger_type": trigger_type,
-    })
-    print(f"[REPLY] done — ai_response={result.get('message', '')[:80]!r}")
-    record_response(recipient_id)
+    t0 = time.monotonic()
+    try:
+        result = call_setter_ai({
+            "id_instagram": recipient_id,
+            "id_publicacion": post_id,
+            "comment_id": comment_id,
+            "story_id": story_id,
+            "story_link": story_link,
+            "customer_message": text,
+            "trigger_type": trigger_type,
+        })
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        username = result.get("user_username", "")
+        print(f"[REPLY] done — ai_response={result.get('message', '')[:80]!r} elapsed={elapsed_ms}ms")
+        log_event(
+            "response",
+            ig_id=recipient_id,
+            ig_username=username,
+            trigger_type=trigger_type,
+            success=True,
+            response_time_ms=elapsed_ms,
+        )
+        record_response(recipient_id)
+    except Exception as e:
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        print(f"[REPLY] Error en call_setter_ai: {e}")
+        log_event(
+            "response",
+            ig_id=recipient_id,
+            trigger_type=trigger_type,
+            success=False,
+            response_time_ms=elapsed_ms,
+        )
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
 

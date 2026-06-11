@@ -23,6 +23,8 @@ def save_lead(state: SetterAIState) -> dict:
     if not ig_id:
         return {}
 
+    human_escalated = state.get("human_escalated")
+
     row = {
         "ig_id": ig_id,
         "ig_username": state.get("user_username"),
@@ -41,6 +43,10 @@ def save_lead(state: SetterAIState) -> dict:
         "notas": state.get("notas_calificacion"),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+    if human_escalated:
+        row["escalated"] = True
+        row["escalated_at"] = datetime.now(timezone.utc).isoformat()
 
     # Elimina claves con valor None para no sobrescribir datos existentes con null
     row = {k: v for k, v in row.items() if v is not None}

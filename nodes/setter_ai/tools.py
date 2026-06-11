@@ -7,8 +7,16 @@ import os
 
 from utils.instagram import send_instagram_dm, send_instagram_dm_from_comment, reply_to_instagram_comment
 from utils.whatsapp import send_human_escalation_alert
+from utils.supabase_events import log_event
 
 ESCALATION_MARKER = "__HUMAN_ESCALATION_REQUIRED__"
+
+
+CAL_BOOKING_URL = os.environ.get("CAL_BOOKING_URL", "")
+
+
+def _contains_cal_link(message: str) -> bool:
+    return bool(CAL_BOOKING_URL) and CAL_BOOKING_URL in message
 
 
 @tool
@@ -26,6 +34,8 @@ def tool_send_dm(
         return f"Envío bloqueado por whitelist (recipient_id={recipient_id})."
     if "error" in result:
         return f"Error al enviar DM: {result['error']}"
+    if _contains_cal_link(message):
+        log_event("pitch_link_sent", ig_id=recipient_id, ig_username=username, trigger_type=state.get("trigger_type", ""))
     return f"DM enviado correctamente a {recipient_id}."
 
 
@@ -63,6 +73,8 @@ def tool_send_dm_from_comment(
         return f"Envío bloqueado por whitelist (recipient_id={recipient_id})."
     if "error" in result:
         return f"Error al enviar DM desde comentario: {result['error']}"
+    if _contains_cal_link(message):
+        log_event("pitch_link_sent", ig_id=recipient_id, ig_username=username, trigger_type="comment")
     return f"DM enviado correctamente desde comentario (comment_id={comment_id})."
 
 
@@ -84,6 +96,7 @@ def tool_escalate_to_human(
         reactivation_url = f"{base_url}/admin/unescalate/{sender_id}?token={admin_token}"
 
     send_human_escalation_alert(username=username, ig_message=full_message, reactivation_url=reactivation_url)
+    log_event("escalation", ig_id=sender_id, ig_username=username, trigger_type=state.get("trigger_type", ""), success=True)
     print(f"[ESCALATION] Escalado a humano: @{username} — {reason}")
     return f"Conversación escalada a un humano. {ESCALATION_MARKER}"
 
